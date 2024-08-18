@@ -249,7 +249,7 @@ void handleServer() {
           client.println(F("Content-Type: text/html; charset=utf-8"));
           //client.println(F("Refresh: 15"));
           client.println();
-          client.print(F("<!DOCTYPE html>\n<html>\n<head>\n<title>Keller Sensor</title>\n</head>\n<body>\n<h1>Keller Sensor</h1>\n<ul>\n<li>Temperatur: "));
+          client.print(F("<!DOCTYPE html>\n<html>\n<head>\n<title>Keller Sensor</title>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<style>body {background-color: #111; color: #EEE; font-family: monospace;}\nul {background-color: #222; max-width: max-content;}\na {background-color: #EEE; color: #222;}\nhr {color: #333;}\n.an {color: lime;}\n.aus{color: red;}\n.version{font-size: 8pt;}</style>\n</head>\n<body>\n<h1>Keller Sensor</h1>\n<ul>\n<li>Temperatur: "));
           client.print(temp);
           client.print(F("°C</li>\n<li>LuftFeuchte: "));
           client.print(hum);
