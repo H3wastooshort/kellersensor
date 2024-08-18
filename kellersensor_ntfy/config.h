@@ -30,4 +30,4 @@ const char* ntfy_clear_message = "trocken";
 
 const uint8_t ntfy_test_prio = 1;  //min
 const char* ntfy_test_tags = "information_source";
-const char* ntfy_test_message = "system ok";
+const char* ntfy_test_message = "system rebooted";

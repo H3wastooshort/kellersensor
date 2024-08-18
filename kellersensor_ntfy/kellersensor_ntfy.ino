@@ -116,8 +116,11 @@ void setup() {
 
   server.begin();
 
+  report_test();
   digitalWrite(LED_BUILTIN, LOW);
 }
+
+
 void readSensors() {
   temp = dht.readTemperature();
   hum = dht.readHumidity();
@@ -382,6 +385,7 @@ bool ntfy_message(uint8_t prio, const char* tags, const char* msg) {
     if (client.read() != ok_str[i]) return false;  //if not 200 OK return error
   */
 
+  delay(100);
   while (client.available()) Serial.print(client.read());
   Serial.println();
 
@@ -407,7 +411,7 @@ void handleSensorData() {
     if (!sent_alert) sent_alert = report_leak();  //if not already successfully sent, send alert
 
     if (leak > CLEAR_THRESH) {
-      //report_clear();
+      report_clear();
       leak_detected = false;
     }
   } else {
@@ -423,10 +427,10 @@ void handleSensorData() {
 void alert_people_nearby() {
   uint8_t slope = millis();
   //if (slope < 128) {
-    if (sound) tone(BEEPER_PIN, 500 + (slope * 4));
+  if (sound) tone(BEEPER_PIN, 500 + (slope * 4));
   //}
   //else noTone(BEEPER_PIN);
-  
+
   analogWrite(FLASHER_PIN, 0xFF - slope);
 }
 
