@@ -57,6 +57,9 @@ int freeMemory() {
 }
 
 void setup() {
+  wdt_enable(WDTO_8S);
+  wdt_reset();
+
   // put your setup code here, to run once:
   Serial.begin(9600);
 
@@ -78,13 +81,15 @@ void setup() {
   digitalWrite(3, LOW);
 
   dht.begin();
+  wdt_reset();
 
   if (!SD.begin(4))
-    for (uint8_t i = 0; i < 20; i++) {
+    for (uint8_t i = 0; i < 10; i++) {
       Serial.println(F("SD error!"));
       digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
       delay(500);
     }
+  wdt_reset();
 
   Ethernet.begin(ETH_MAC, ETH_IP, ETH_DNS, ETH_GATEWAY, ETH_SUBNET);
   /* DOES NOT WORK! (no idea why)
@@ -101,6 +106,7 @@ void setup() {
   // print your local IP address:
   Serial.print(F("IP: "));
   Serial.println(Ethernet.localIP());
+  wdt_reset();
 
   ntp.begin();
   ntp.update();
@@ -111,12 +117,16 @@ void setup() {
       RTC.set(ntp.getEpochTime());
     }
     }*/
+  wdt_reset();
 
   //sound = EEPROM.read(43);
 
   server.begin();
+  wdt_reset();
 
   report_test();
+  wdt_reset();
+
   digitalWrite(LED_BUILTIN, LOW);
 }
 
@@ -175,12 +185,10 @@ void logData() {
 
 
 #define addJsonKV(s, k, v) \
-  s += "\""; \
+  s += '"'; \
   s += k; \
-  s += "\":\""; \
+  s += "\":"; \
   s += v; \
-  s += "\","
-
 
 void handleServer() {
   EthernetClient client = server.available();
@@ -243,11 +251,11 @@ void handleServer() {
           client.println();
           client.print(F("<!DOCTYPE html>\n<html>\n<head>\n<title>Keller Sensor</title>\n</head>\n<body>\n<h1>Keller Sensor</h1>\n<ul>\n<li>Temperatur: "));
           client.print(temp);
-          client.print(F("°C</li>\n<li>Feuchte: "));
+          client.print(F("°C</li>\n<li>LuftFeuchte: "));
           client.print(hum);
-          client.print(F("%</li>\n<li>Bodenfeuchte: "));
-          client.print(1023 - leak);
-          client.print(F("/1023</li>.\n</ul>\n<hr>\n "));
+          client.print(F("%</li>\n<li>Wasser: "));
+          client.print((1023 - leak) / 1023);
+          client.print(F("%</li>\n</ul>\n<hr>\n "));
           client.print(F("<p>Freier Speicher: "));
           client.print(freeMemory());
           client.print(F("</p>\n<p>UNIX Zeit: "));
@@ -283,8 +291,11 @@ void handleServer() {
 
           json += "{";
           addJsonKV(json, "temp", temp);
+          json += ',';
           addJsonKV(json, "hum", temp);
+          json += ',';
           addJsonKV(json, "leak_raw", leak);
+          json += ',';
           addJsonKV(json, "leak", leak_detected);
           json += "}";
 
@@ -379,29 +390,36 @@ bool ntfy_message(uint8_t prio, const char* tags, const char* msg) {
   //client.println(msg);
 
   /*
-  const char* ok_str = "200 ";
+  const char* ok_str = "HTTP/1.1 200 ";
 
   for (uint8_t b = 0; b < sizeof(ok_str); b++)
     if (client.read() != ok_str[i]) return false;  //if not 200 OK return error
   */
 
   delay(100);
-  while (client.available()) Serial.print(client.read());
+  while (client.available()) Serial.write(client.read());
   Serial.println();
 
   return true;
 }
 
 bool report_leak() {
-  return ntfy_message(ntfy_alert_prio, ntfy_alert_tags, ntfy_alert_message);
+  wdt_reset();
+  bool status = ntfy_message(ntfy_alert_prio, ntfy_alert_tags, ntfy_alert_message);
+  wdt_reset();
+  return status;
 }
 
 bool report_clear() {
-  return ntfy_message(ntfy_clear_prio, ntfy_clear_tags, ntfy_clear_message);
+  wdt_reset();
+  ntfy_message(ntfy_clear_prio, ntfy_clear_tags, ntfy_clear_message);
+  wdt_reset();
 }
 
 bool report_test() {
-  return ntfy_message(ntfy_test_prio, ntfy_test_tags, ntfy_test_message);
+  wdt_reset();
+  ntfy_message(ntfy_test_prio, ntfy_test_tags, ntfy_test_message);
+  wdt_reset();
 }
 
 void handleSensorData() {
@@ -470,5 +488,6 @@ void loop() {
       ;
   }
 
+  wdt_reset();
   delay(1);
 }
