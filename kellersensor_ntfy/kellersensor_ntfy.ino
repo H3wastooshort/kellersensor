@@ -1,4 +1,6 @@
 /*
+  Compile this with MiniCore (LTO enabled) to save space.
+
    Beware of code which is disabled to save PGM space
    Removed things include:
    RTC
@@ -6,12 +8,10 @@
    EEPROM
 */
 
-#include "config.h"
 
 #include <DHT.h>
 #include <SPI.h>
 #include <Ethernet.h>
-#include <ArduinoJson.h>
 #include <avr/wdt.h>
 //#include <EEPROM.h>
 #include <SD.h>
@@ -20,11 +20,14 @@
 //#include <Wire.h>
 //#include <DS1307RTC.h>
 
+#include "config.h"
 #include "strings.h"
 
 float temp = -999;
 float hum = -999;
 int leak = 9999;
+bool leak_detected = false;
+
 bool sound = true;
 
 DHT dht(DHT_PIN, DHT22);
@@ -83,7 +86,7 @@ void setup() {
       delay(500);
     }
 
-  Ethernet.begin(mac, ip);
+  Ethernet.begin(ETH_MAC, ETH_IP, ETH_DNS, ETH_GATEWAY, ETH_SUBNET);
   /* DOES NOT WORK! (no idea why)
      throws error even tho hardware is connected and working
     if (Ethernet.hardwareStatus() == EthernetNoHardware) {
@@ -96,11 +99,12 @@ void setup() {
     }*/
 
   // print your local IP address:
-  Serial.print(F("IP address: "));
+  Serial.print(F("IP: "));
   Serial.println(Ethernet.localIP());
 
   ntp.begin();
   ntp.update();
+  Serial.println(F("got time"));
   /*if (RTC.chipPresent()) {
     //Check if NTP valid, then write
     if (ntp.getEpochTime() > 10000) {
@@ -166,12 +170,21 @@ void logData() {
   logfile.close();
 }
 
-void handleServer() {
-  char clientline[WEBBUF];
-  int index = 0;
 
+#define addJsonKV(s, k, v) \
+  s += "\""; \
+  s += k; \
+  s += "\":\""; \
+  s += v; \
+  s += "\","
+
+
+void handleServer() {
   EthernetClient client = server.available();
+
   if (client) {
+    char clientline[WEBBUF];
+    int index = 0;
     digitalWrite(LED_BUILTIN, HIGH);
     // an http request ends with a blank line
     boolean current_line_is_blank = true;
@@ -229,9 +242,9 @@ void handleServer() {
           client.print(temp);
           client.print(F("°C</li>\n<li>Feuchte: "));
           client.print(hum);
-          client.print(F("%</li>\n<li>Leck Rohwert: "));
-          client.print(leak);
-          client.print(F("/1023</li>\nDer Leck Rowert geht von 0 bis 1023, wobei 1023 trocken, und 0 extrem nass ist.\n</ul>\n<hr>\n "));
+          client.print(F("%</li>\n<li>Bodenfeuchte: "));
+          client.print(1023 - leak);
+          client.print(F("/1023</li>.\n</ul>\n<hr>\n "));
           client.print(F("<p>Freier Speicher: "));
           client.print(freeMemory());
           client.print(F("</p>\n<p>UNIX Zeit: "));
@@ -262,15 +275,20 @@ void handleServer() {
         else if (0 == strcmp(filename, "/data")) {
           client.println(OKheader);
           client.println(F("Content-Type: application/json"));
-          DynamicJsonDocument doc(128);
-          doc["temp"] = temp;
-          doc["hum"] = hum;
-          doc["leak_raw"] = leak;
-          //doc["sound"] = sound;
+
+          String json = "";
+
+          json += "{";
+          addJsonKV(json, "temp", temp);
+          addJsonKV(json, "hum", temp);
+          addJsonKV(json, "leak_raw", leak);
+          addJsonKV(json, "leak", leak_detected);
+          json += "}";
+
           client.print(F("Content-Length: "));
-          client.println(measureJson(doc));
+          client.println(json.length());
           client.println();
-          serializeJson(doc, client);
+          client.print(json);
           break;
         }
 
@@ -315,9 +333,9 @@ void handleServer() {
 
         else {
           client.println(F("HTTP/1.1 404 Not Found"));
-          client.println(CT_TEXT);
+          /*client.println(CT_TEXT);
           client.println();
-          client.println(F("404 Not Found"));
+          client.println(F("404 Not Found"));*/
           break;
         }
       }
@@ -329,25 +347,33 @@ void handleServer() {
   }
 }
 
-bool report_leak() {
+bool ntfy_message(uint8_t prio, const char* tags, const char* msg) {
+  Serial.print(F("conn "));
   EthernetClient client;
   client.stop();
-  if (!client.connect(ntfy_server, ntfy_port)) return false;
+  Serial.print(ntfy_server);
+  const bool status = client.connect(ntfy_server, ntfy_port);
+  Serial.print(" -> ");
+  Serial.print(client.remoteIP());
+  Serial.println(status ? F(" OK") : F(" ERR"));
+  if (!status) return false;
   //http
   client.print(F("POST /"));
   client.print(ntfy_topic);
   client.println(F(" HTTP/1.1"));
   //headers
+  client.println("Connection: close");
   client.print(F("Host: "));
   client.println(ntfy_server);
   client.print(F("X-Priority: "));
-  client.println(ntfy_prio);
+  client.println(prio);
   client.print(F("X-Tags: "));
-  client.println(ntfy_tags);
-  client.println("Connection: close");
+  client.println(tags);
+  client.print(F("X-Title: "));
+  client.println(msg);
   client.println();
   //message
-  client.print(ntfy_message);
+  //client.println(msg);
 
   /*
   const char* ok_str = "200 ";
@@ -356,10 +382,54 @@ bool report_leak() {
     if (client.read() != ok_str[i]) return false;  //if not 200 OK return error
   */
 
+  while (client.available()) Serial.print(client.read());
+  Serial.println();
+
   return true;
 }
 
-bool sent_alert = false;
+bool report_leak() {
+  return ntfy_message(ntfy_alert_prio, ntfy_alert_tags, ntfy_alert_message);
+}
+
+bool report_clear() {
+  return ntfy_message(ntfy_clear_prio, ntfy_clear_tags, ntfy_clear_message);
+}
+
+bool report_test() {
+  return ntfy_message(ntfy_test_prio, ntfy_test_tags, ntfy_test_message);
+}
+
+void handleSensorData() {
+  static bool sent_alert = false;
+
+  if (leak_detected) {
+    if (!sent_alert) sent_alert = report_leak();  //if not already successfully sent, send alert
+
+    if (leak > CLEAR_THRESH) {
+      //report_clear();
+      leak_detected = false;
+    }
+  } else {
+    sent_alert = false;
+
+    noTone(BEEPER_PIN);
+    digitalWrite(FLASHER_PIN, LOW);
+
+    if (leak < LEAK_THRESH) leak_detected = true;
+  }
+}
+
+void alert_people_nearby() {
+  uint8_t slope = millis();
+  //if (slope < 128) {
+    if (sound) tone(BEEPER_PIN, 500 + (slope * 4));
+  //}
+  //else noTone(BEEPER_PIN);
+  
+  analogWrite(FLASHER_PIN, 0xFF - slope);
+}
+
 void loop() {
   // put your main code here, to run repeatedly:
   handleServer();
@@ -370,7 +440,10 @@ void loop() {
   if ((millis() - sensMillis) > 2000) {
     readSensors();
     sensMillis = millis();
+    handleSensorData();
   }
+
+  if (leak_detected) alert_people_nearby();
 
   //Log data each hour
   static uint32_t logMillis = 0;
@@ -391,23 +464,6 @@ void loop() {
     wdt_enable(WDTO_15MS);
     while (1)
       ;
-  }
-
-  if (leak < 512) {
-    if (!sent_alert) sent_alert = report_leak();  //if not already successfully sent, send alert
-
-    if (uint8_t(millis()) > 127) {
-      if (sound) {
-        tone(BEEPER_PIN, 1000);
-      }
-    } else {
-      noTone(BEEPER_PIN);
-    }
-    analogWrite(FLASHER_PIN, uint8_t(millis()));
-  } else {
-    sent_alert = false;
-    noTone(BEEPER_PIN);
-    digitalWrite(FLASHER_PIN, LOW);
   }
 
   delay(1);
