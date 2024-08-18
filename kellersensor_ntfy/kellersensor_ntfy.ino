@@ -30,7 +30,7 @@ bool leak_detected = false;
 
 bool sound = true;
 
-DHT dht(DHT_PIN, DHT22);
+DHT dht(DHT_PIN, DHT_TYPE);
 
 #define WEBBUF 64
 EthernetServer server(80);
@@ -188,7 +188,7 @@ void logData() {
   s += '"'; \
   s += k; \
   s += "\":"; \
-  s += v; \
+  s += v;
 
 void handleServer() {
   EthernetClient client = server.available();
@@ -254,7 +254,7 @@ void handleServer() {
           client.print(F("°C</li>\n<li>LuftFeuchte: "));
           client.print(hum);
           client.print(F("%</li>\n<li>Wasser: "));
-          client.print((1023 - leak) / 1023);
+          client.print((1023 - leak) / 10);
           client.print(F("%</li>\n</ul>\n<hr>\n "));
           client.print(F("<p>Freier Speicher: "));
           client.print(freeMemory());
@@ -389,6 +389,8 @@ bool ntfy_message(uint8_t prio, const char* tags, const char* msg) {
   //message
   //client.println(msg);
 
+  delay(100);
+
   /*
   const char* ok_str = "HTTP/1.1 200 ";
 
@@ -396,9 +398,9 @@ bool ntfy_message(uint8_t prio, const char* tags, const char* msg) {
     if (client.read() != ok_str[i]) return false;  //if not 200 OK return error
   */
 
-  delay(100);
   while (client.available()) Serial.write(client.read());
   Serial.println();
+  client.stop();
 
   return true;
 }

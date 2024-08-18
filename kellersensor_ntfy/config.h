@@ -1,5 +1,6 @@
 #define WATER_PIN A0
 #define DHT_PIN 6
+#define DHT_TYPE DHT22
 #define BEEPER_PIN 5
 #define LED_BUILTIN 8
 #define FLASHER_PIN 9
